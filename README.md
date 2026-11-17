@@ -160,6 +160,7 @@ Functionality is grouped into services, accessed as properties on the client:
 ```python
 # Get cart contents
 cart = await client.cart.get_content()
+# CartItem has id, cart_item_id, name, quantity, price, category_name, brand, currency, image
 # -> Cart(total_price=199.90, total_items=3, can_make_order=True, products=[CartItem, ...],
 #         minimum_order_price=..., currency="CZK")
 # can_make_order also requires checkout details (e.g. a delivery slot); to check
@@ -181,8 +182,10 @@ await client.cart.delete_item(order_field_id="abc123")
 ```python
 # Search for products -> SearchResults | None (None only on request failure)
 results = await client.products.search("mléko", limit=10, favourite=False)
-for product in results.results:  # ProductSearchResult: id, name, price, brand, amount
-    print(product.name, product.price)
+for product in results.results:  # ProductSearchResult: id, name, price, brand, amount, image
+    print(product.name, product.price, product.image)
+# image is the full CDN URL of the product picture (built from the API's imgPath
+# and the shop's Site.cdn_url), or None when the API sends no picture.
 
 # AI-generated product summary -> AISummary | None
 summary = await client.products.get_ai_summary(product_id=1384964)
@@ -217,6 +220,11 @@ last_order = await client.orders.get_last()                       # last deliver
 orders = await client.orders.get_delivered(limit=50, offset=0)    # one history page
 all_orders = await client.orders.get_all_delivered()              # every page, paginated
 detail = await client.orders.get_detail(order_id=12345678)        # full order incl. items
+
+# Line items of one order (upcoming or delivered) -> list[OrderItem] | None
+# OrderItem: id (product), name, quantity, price, unit_price, textual_amount,
+# currency, image. Uses the same request as get_detail.
+items = await client.orders.get_items(order_id=12345678)
 ```
 
 ### Delivery service (`client.delivery`)

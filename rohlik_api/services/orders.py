@@ -7,6 +7,7 @@ from typing import Any
 
 from ..endpoints import Endpoints
 from ..http_client import HTTP_ERRORS
+from ..models import OrderItem
 from .base import BaseService
 
 _LOGGER = logging.getLogger(__name__)
@@ -109,3 +110,24 @@ class OrderService(BaseService):
         except HTTP_ERRORS as err:
             _LOGGER.warning("Error fetching order detail for %s: %s", order_id, err)
             return None
+
+    async def get_items(self, order_id: int) -> list[OrderItem] | None:
+        """Get the line items of a single order.
+
+        Works for upcoming and delivered orders alike. It is built on
+        :meth:`get_detail` (``/api/v3/orders/{order_id}``), so it costs one
+        request.
+
+        Args:
+            order_id: The ID of the order (``id`` of an entry from
+                :meth:`get_next` or :meth:`get_delivered`).
+
+        Returns:
+            The order's items (empty if the order has none), or None if the
+            order does not exist or the request fails.
+        """
+        detail = await self.get_detail(order_id)
+        if detail is None:
+            return None
+        items = detail.get("items") or []
+        return [OrderItem.from_api(item, self._cdn_url) for item in items if isinstance(item, dict)]
