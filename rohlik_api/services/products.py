@@ -74,7 +74,9 @@ class ProductService(BaseService):
         found_products = found_products[:limit]
 
         return SearchResults(
-            results=[ProductSearchResult.from_api(product) for product in found_products]
+            results=[
+                ProductSearchResult.from_api(product, self._cdn_url) for product in found_products
+            ]
         )
 
     async def get_ai_summary(self, product_id: int) -> AISummary | None:

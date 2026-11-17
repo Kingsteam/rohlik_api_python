@@ -9,7 +9,7 @@ from .auth import AuthManager
 from .client import RohlikAPI
 from .endpoints import BASE_URL, Endpoints
 from .errors import APIRequestFailedError, InvalidCredentialsError, RohlikAPIError
-from .helpers import format_price, mask_data
+from .helpers import cdn_url_for, format_price, image_url, mask_data
 from .http_client import HttpClient
 from .models import (
     AISummary,
@@ -24,6 +24,7 @@ from .models import (
     IngredientProductGroup,
     IngredientProducts,
     NutritionalValue,
+    OrderItem,
     ProductCard,
     ProductComposition,
     ProductPrice,
@@ -37,7 +38,7 @@ from .models import (
 )
 from .sites import SITES, Site
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = [
     # Main client (facade)
     "RohlikAPI",
@@ -59,6 +60,7 @@ __all__ = [
     "Allergens",
     "ProductPrice",
     "ProductCard",
+    "OrderItem",
     "RecipeSearchResults",
     "RecipeSummary",
     "RecipeDetail",
@@ -74,6 +76,8 @@ __all__ = [
     # Utilities
     "mask_data",
     "format_price",
+    "image_url",
+    "cdn_url_for",
     # Advanced: low-level components
     "HttpClient",
     "AuthManager",

@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .helpers import format_price
+from .helpers import format_price, image_url
 
 # ---------------------------------------------------------------------------
 # Cart
@@ -41,6 +41,8 @@ class CartItem:
         brand: Brand name, or an empty string if unknown.
         currency: ISO 4217 currency code of :attr:`price`, e.g. ``"CZK"``, or an
             empty string if the API omits it.
+        image: Full URL of the product image (from ``imgPath``), or ``None`` if
+            the API omits it.
     """
 
     id: str
@@ -51,10 +53,15 @@ class CartItem:
     category_name: str = ""
     brand: str = ""
     currency: str = ""
+    image: str | None = None
 
     @classmethod
-    def from_api(cls, item_id: str, data: dict[str, Any]) -> CartItem:
-        """Build a :class:`CartItem` from a cart ``items`` entry."""
+    def from_api(cls, item_id: str, data: dict[str, Any], cdn_url: str = "") -> CartItem:
+        """Build a :class:`CartItem` from a cart ``items`` entry.
+
+        ``cdn_url`` is the shop's image CDN, used to complete a relative
+        ``imgPath`` (see :func:`~rohlik_api.helpers.image_url`).
+        """
         return cls(
             id=item_id,
             cart_item_id=data.get("orderFieldId", ""),
@@ -64,6 +71,7 @@ class CartItem:
             category_name=data.get("primaryCategoryName", ""),
             brand=data.get("brand", ""),
             currency=data.get("currency", ""),
+            image=image_url(data.get("imgPath"), cdn_url),
         )
 
 
@@ -98,11 +106,11 @@ class Cart:
     currency: str | None = None
 
     @classmethod
-    def from_api(cls, payload: dict[str, Any]) -> Cart:
+    def from_api(cls, payload: dict[str, Any], cdn_url: str = "") -> Cart:
         """Build a :class:`Cart` from a ``/v2/cart`` response."""
         data = payload.get("data", {})
         items: dict[str, Any] = data.get("items", {})
-        products = [CartItem.from_api(pid, pdata) for pid, pdata in items.items()]
+        products = [CartItem.from_api(pid, pdata, cdn_url) for pid, pdata in items.items()]
         return cls(
             total_price=data.get("totalPrice", 0),
             total_items=len(items),
@@ -130,6 +138,8 @@ class ProductSearchResult:
             API omitted price information).
         brand: Brand name, if known.
         amount: Textual packaging/amount, e.g. ``"500 g"``.
+        image: Full URL of the product image (from ``imgPath``), or ``None`` if
+            the API omits it.
     """
 
     id: int | None
@@ -137,16 +147,22 @@ class ProductSearchResult:
     price: str
     brand: str | None = None
     amount: str | None = None
+    image: str | None = None
 
     @classmethod
-    def from_api(cls, data: dict[str, Any]) -> ProductSearchResult:
-        """Build a :class:`ProductSearchResult` from a product list entry."""
+    def from_api(cls, data: dict[str, Any], cdn_url: str = "") -> ProductSearchResult:
+        """Build a :class:`ProductSearchResult` from a product list entry.
+
+        ``cdn_url`` is the shop's image CDN, used to complete a relative
+        ``imgPath`` (see :func:`~rohlik_api.helpers.image_url`).
+        """
         return cls(
             id=data.get("productId"),
             name=data.get("productName"),
             price=format_price(data.get("price")),
             brand=data.get("brand"),
             amount=data.get("textualAmount"),
+            image=image_url(data.get("imgPath"), cdn_url),
         )
 
 
@@ -382,6 +398,58 @@ class ProductCard:
             # Default to in-stock when the status is absent, matching the field
             # default (in_stock=True) so hand-built and parsed cards agree.
             in_stock=stock.get("availabilityStatus", "AVAILABLE") == "AVAILABLE",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Orders
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class OrderItem:
+    """A single line item of an order (upcoming or delivered).
+
+    Parsed from an ``items`` entry of the order detail response
+    (``/api/v3/orders/{order_id}``).
+
+    Attributes:
+        id: Product ID of the line.
+        name: Product name.
+        quantity: Number of units ordered (the API's ``amount``).
+        price: Total price of the line, in :attr:`currency`.
+        unit_price: Price of one unit, in :attr:`currency`.
+        textual_amount: Textual packaging/amount, e.g. ``"1 l"``.
+        currency: ISO 4217 currency code of the prices, or an empty string if
+            the API omits it.
+        image: Full URL of the product image (from ``imgPath``), or ``None`` if
+            the API omits it.
+    """
+
+    id: int | None
+    name: str
+    quantity: int
+    price: float
+    unit_price: float
+    textual_amount: str = ""
+    currency: str = ""
+    image: str | None = None
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any], cdn_url: str = "") -> OrderItem:
+        """Build an :class:`OrderItem` from an order detail ``items`` entry."""
+        prices = data.get("priceComposition") or {}
+        total = prices.get("total") or {}
+        unit = prices.get("unit") or {}
+        return cls(
+            id=data.get("id"),
+            name=data.get("name") or "",
+            quantity=data.get("amount", 1),
+            price=total.get("amount", 0),
+            unit_price=unit.get("amount", 0),
+            textual_amount=data.get("textualAmount") or "",
+            currency=total.get("currency") or "",
+            image=image_url(data.get("imgPath"), cdn_url),
         )
 
 
