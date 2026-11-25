@@ -360,6 +360,8 @@ class ProductCard:
         on_sale: True when the product currently has a sale price.
         sale_valid_till: ISO timestamp the sale is valid until, if on sale.
         in_stock: True when the product is available to order.
+        image: Full URL of the product image (from ``image.path`` or
+            ``imgPath``), or ``None`` if the API omits it.
     """
 
     id: int | None
@@ -374,10 +376,17 @@ class ProductCard:
     on_sale: bool = False
     sale_valid_till: str | None = None
     in_stock: bool = True
+    image: str | None = None
 
     @classmethod
-    def from_api(cls, data: dict[str, Any]) -> ProductCard:
-        """Build a :class:`ProductCard` from a product-card entry."""
+    def from_api(cls, data: dict[str, Any], cdn_url: str = "") -> ProductCard:
+        """Build a :class:`ProductCard` from a product-card entry.
+
+        ``cdn_url`` is the shop's image CDN, used to complete a relative image
+        path (see :func:`~rohlik_api.helpers.image_url`).
+        """
+        image = data.get("image")
+        image_path = image.get("path") if isinstance(image, dict) else image
         prices = data.get("prices") or {}
         sale_price = prices.get("salePrice")
         original_price = prices.get("originalPrice")
@@ -398,7 +407,120 @@ class ProductCard:
             # Default to in-stock when the status is absent, matching the field
             # default (in_stock=True) so hand-built and parsed cards agree.
             in_stock=stock.get("availabilityStatus", "AVAILABLE") == "AVAILABLE",
+            image=image_url(image_path or data.get("imgPath"), cdn_url),
         )
+
+
+# ---------------------------------------------------------------------------
+# Delivery slots
+# ---------------------------------------------------------------------------
+
+#: Slot ``type`` values of the timeslots endpoint and their window length.
+SLOT_TYPE_HOUR = "VIRTUAL"
+SLOT_TYPE_QUARTER = "ON_TIME"
+
+
+@dataclass(slots=True)
+class DeliverySlot:
+    """One bookable delivery window from the timeslots endpoint.
+
+    Parsed from the ``availabilityDays[].slots`` entries of
+    :meth:`~rohlik_api.services.DeliveryService.get_next_slots`. The shop lists
+    one-hour windows (type ``"VIRTUAL"``) and, per hour, four 15-minute windows
+    (type ``"ON_TIME"``, mostly for premium members).
+
+    Attributes:
+        id: Slot ID (``slotId``).
+        type: Raw slot type, e.g. ``"VIRTUAL"`` or ``"ON_TIME"``.
+        date: Delivery day as ``YYYY-MM-DD``.
+        day_label: The shop's label for the day, e.g. ``"Morgen"``.
+        since: Start of the window as an ISO 8601 timestamp with offset.
+        till: End of the window as an ISO 8601 timestamp with offset.
+        window: The shop's display text, e.g. ``"11:00 – 12:00"``.
+        minutes: Length of the window in minutes (60 or 15 for known types).
+        free_percent: Remaining capacity in percent (0 = fully booked).
+        capacity_message: The shop's capacity text, e.g. ``"Frei"``.
+        price: Delivery fee for this window, in the shop's currency.
+        premium: True when the window is reserved for premium members.
+        eco: True for the shop's "eco" (bundled) windows.
+        reservable: True when the shop allows reserving this window.
+    """
+
+    id: int | None
+    type: str
+    date: str
+    day_label: str
+    since: str
+    till: str
+    window: str = ""
+    minutes: int = 60
+    free_percent: int = 0
+    capacity_message: str = ""
+    price: float = 0
+    premium: bool = False
+    eco: bool = False
+    reservable: bool = False
+
+    @property
+    def available(self) -> bool:
+        """True when the window still has free capacity."""
+        return self.free_percent > 0
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any], date: str = "", day_label: str = "") -> DeliverySlot:
+        """Build a :class:`DeliverySlot` from one ``slots`` entry."""
+        interval = data.get("interval") or {}
+        capacity = data.get("timeSlotCapacityDTO") or {}
+        reservation = data.get("timeSlotReservationDTO") or {}
+        slot_type = data.get("type") or ""
+        try:
+            free = int(capacity.get("totalFreeCapacityPercent") or 0)
+        except (TypeError, ValueError):
+            free = 0
+        return cls(
+            id=data.get("slotId"),
+            type=slot_type,
+            date=date,
+            day_label=day_label,
+            since=interval.get("since") or data.get("since") or "",
+            till=interval.get("till") or data.get("till") or "",
+            window=data.get("timeWindow") or "",
+            minutes=15 if slot_type == SLOT_TYPE_QUARTER else 60,
+            free_percent=max(free, 0),
+            capacity_message=capacity.get("capacityMessage") or "",
+            price=data.get("price") or 0,
+            premium=bool(data.get("premium")),
+            eco=bool(data.get("eco")),
+            reservable=bool(reservation.get("enabled")),
+        )
+
+    @classmethod
+    def list_from_api(cls, payload: dict[str, Any] | None) -> list[DeliverySlot]:
+        """Parse every slot of a timeslots response, sorted by start time.
+
+        Accepts the full ``{status, messages, data}`` envelope or its ``data``
+        part. Returns an empty list for missing or malformed payloads.
+        """
+        if not isinstance(payload, dict):
+            return []
+        data = payload.get("data", payload)
+        days = data.get("availabilityDays") if isinstance(data, dict) else None
+        if not isinstance(days, list):
+            return []
+        slots: list[DeliverySlot] = []
+        for day in days:
+            if not isinstance(day, dict):
+                continue
+            by_hour = day.get("slots")
+            groups = by_hour.values() if isinstance(by_hour, dict) else by_hour or []
+            for group in groups:
+                for entry in group if isinstance(group, list) else []:
+                    if isinstance(entry, dict):
+                        slots.append(
+                            cls.from_api(entry, day.get("date") or "", day.get("label") or "")
+                        )
+        slots.sort(key=lambda s: (s.since, s.minutes != 60, s.till))
+        return slots
 
 
 # ---------------------------------------------------------------------------

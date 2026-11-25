@@ -210,6 +210,13 @@ cards = await client.products.get_cards([1425155, 1384964])
 deals = await client.products.get_week_sales(size=30)
 for card in deals or []:
     print(card.name, card.price, card.original_price, card.on_sale)
+
+# Your favourite products ("Oblíbené"), with image -> list[ProductCard] | None
+# Pages through the favourites list (sponsored entries are skipped), then loads
+# the cards in chunks of 50. get_favourite_ids() returns only the IDs.
+favourites = await client.products.get_favourites()
+for card in favourites or []:
+    print(card.id, card.name, card.amount, card.image, card.in_stock)
 ```
 
 ### Orders service (`client.orders`)
@@ -233,6 +240,7 @@ items = await client.orders.get_items(order_id=12345678)
 delivery = await client.delivery.get_info()                    # first available delivery
 timeslot = await client.delivery.get_timeslot_reservation()    # reserved slot, if any
 slots = await client.delivery.get_next_slots()                 # upcoming slots for your address
+windows = await client.delivery.get_slots()                    # every window as DeliverySlot
 announcements = await client.delivery.get_announcements()      # e.g. courier ETA messages
 addresses = await client.delivery.get_addresses()              # saved delivery addresses
 address_id = await client.delivery.get_active_address_id()     # address used for slots
@@ -241,6 +249,11 @@ address_id = await client.delivery.get_active_address_id()     # address used fo
 `get_next_slots()` needs a delivery address. The login response does not always
 include one, so the client falls back to your saved addresses (preferring the one
 you are currently delivered to) and caches the result.
+
+`get_slots()` parses the same response into a sorted `list[DeliverySlot]`: every
+one-hour window (`type` `"VIRTUAL"`, `minutes` 60) and, where the shop offers them,
+the 15-minute windows (`"ON_TIME"`, `minutes` 15, usually `premium`). Fully booked
+windows are included with `free_percent` 0 (`available` is False).
 
 ### Account service (`client.account`)
 

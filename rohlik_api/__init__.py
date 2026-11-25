@@ -16,6 +16,7 @@ from .models import (
     Allergens,
     Cart,
     CartItem,
+    DeliverySlot,
     DirectionSection,
     DirectionStep,
     IngredientGroup,
@@ -38,7 +39,7 @@ from .models import (
 )
 from .sites import SITES, Site
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __all__ = [
     # Main client (facade)
     "RohlikAPI",
@@ -52,6 +53,7 @@ __all__ = [
     # Models
     "Cart",
     "CartItem",
+    "DeliverySlot",
     "SearchResults",
     "ProductSearchResult",
     "AISummary",
